@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pumpkin Farmer</title>
+
+<style>
+body {
+  background:#2b1b0e;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  margin:0;
+  font-family:Arial, sans-serif;
+  color:white;
+}
+
+#container { display:flex; gap:20px; }
+
+#game {
+  position:relative;
+  width:520px;
+  height:520px;
+  background:#4a2d12;
+  padding:6px;
+  display:grid;
+  grid-template-columns:repeat(10, 48px);
+  grid-template-rows:repeat(10, 48px);
+  gap:4px;
+}
+
+.tile { background:#6b3e1e; }
+
+.pumpkin {
+  width:100%;
+  height:100%;
+  background:orange;
+  border-radius:8px;
+}
+
+#player {
+  position:absolute;
+  width:36px;
+  height:36px;
+  background:#4aa3ff;
+  border-radius:6px;
+  z-index:5;
+}
+
+#ui { width:280px; }
+
+button {
+  padding:6px;
+  margin-top:6px;
+  background:#8a4b1d;
+  color:white;
+  border:none;
+  cursor:pointer;
+}
+button:hover { background:#a85c24; }
+
+.upgrade-container { display:flex; gap:6px; margin-bottom:6px; }
+
+.bar {
+  width:100%;
+  height:14px;
+  background:#3a240f;
+  border-radius:6px;
+  overflow:hidden;
+  margin-bottom:6px;
+}
+.fill { height:100%; background:#4aa3ff; width:0%; }
+</style>
+</head>
+<body>
+
+<div id="container">
+  <div id="game"></div>
+
+  <div id="ui">
+    <h2>🎃 Pumpkin Farmer</h2>
+
+    <p>Money: $<span id="money">0</span></p>
+    <p>Pumpkins: <span id="count">0</span></p>
+
+    <h3>⭐ Level <span id="level">1</span></h3>
+    <div class="bar"><div id="xpFill" class="fill"></div></div>
+    <p style="font-size:13px;">Multiplier: <span id="multi">1.0x</span></p>
+
+    <h3>🏆 Prestige Points: <span id="prestigePoints">0</span></h3>
+    <button id="prestigeBtn" onclick="prestige()">Prestige (Will get 0)</button>
+
+    <h3>🛒 Shop</h3>
+
+    <div class="upgrade-container">
+      <button id="speedBtn" onclick="buySpeed()">Speed Lv <span id="speedLv">1</span> ($10)</button>
+      <button onclick="buyMaxSpeed()" style="background:#6fa84a;">Buy Max</button>
+    </div>
+
+    <div class="upgrade-container">
+      <button onclick="buyValue()">Pumpkin Value Lv <span id="valueLv">1</span> ($15)</button>
+      <button onclick="buyMaxValue()" style="background:#6fa84a;">Buy Max</button>
+    </div>
+
+    <div class="upgrade-container">
+      <button onclick="buyRegen()">Regen Speed Lv <span id="regenLv">1</span> ($20)</button>
+      <button onclick="buyMaxRegen()" style="background:#6fa84a;">Buy Max</button>
+    </div>
+
+    <h3>💾 Save / Reset</h3>
+    <button onclick="saveGame()">Save Game</button>
+    <button onclick="resetGame()" style="background:#a84444;">Reset Game</button>
+
+    <p style="margin-top:10px;font-size:14px;">Move: WASD / Arrows</p>
+  </div>
+</div>
+
+<script>
+const SIZE=10,TILE=48,GAP=4,PAD=6;
+const game=document.getElementById("game");
+const moneyEl=document.getElementById("money");
+const countEl=document.getElementById("count");
+
+// GAME STATE
+let money=0,pumpkins=0;
+
+// LEVEL SYSTEM
+let level=1,xp=0,xpNeeded=10,moneyMult=1;
+
+// PRESTIGE
+let prestigePoints=0;
+
+// UPGRADES (FLAT)
+let speedLv=1,valueLv=1,regenLv=1;
+let speed=2.2,pumpkinValue=1,regenTime=3000;
+const maxSpeed=25;
+
+let tiles=[],timers={},keys={};
+
+const levelEl=document.getElementById("level");
+const xpFill=document.getElementById("xpFill");
+const multiEl=document.getElementById("multi");
+
+const speedLvEl=document.getElementById("speedLv");
+const valueLvEl=document.getElementById("valueLv");
+const regenLvEl=document.getElementById("regenLv");
+const speedBtn=document.getElementById("speedBtn");
+
+const prestigeEl=document.getElementById("prestigePoints");
+const prestigeBtn=document.getElementById("prestigeBtn");
+
+// BUILD FARM
+for(let y=0;y<SIZE;y++){
+  for(let x=0;x<SIZE;x++){
+    const t=document.createElement("div");
+    t.className="tile";
+    t.dataset.x=x;t.dataset.y=y;
+    const p=document.createElement("div");
+    p.className="pumpkin";
+    t.appendChild(p);
+    game.appendChild(t);
+    tiles.push(t);
+  }
+}
+
+// PLAYER
+const player=document.createElement("div");
+player.id="player";
+game.appendChild(player);
+let pos={x:PAD+6,y:PAD+6};
+
+function tilePos(x,y){ return {x:PAD+x*(TILE+GAP),y:PAD+y*(TILE+GAP)}; }
+function overlap(a,b){ return !(a.x+a.w<b.x||a.x>b.x+b.w||a.y+a.h<b.y||a.y>b.y+b.h); }
+
+// XP / LEVEL
+function gainXP(){
+  xp++;
+  if(xp>=xpNeeded){
+    xp=0;
+    level++;
+    xpNeeded=Math.floor(xpNeeded*1.4);
+    moneyMult*=1.1;
+  }
+  updateLevelUI();
+}
+
+function updateLevelUI(){
+  levelEl.textContent=level;
+  multiEl.textContent=moneyMult.toFixed(2)+"x";
+  xpFill.style.width=(xp/xpNeeded*100)+"%";
+  updatePrestigeButton();
+}
+
+// FARMING
+function farm(){
+  const pr={x:pos.x,y:pos.y,w:36,h:36};
+  tiles.forEach(t=>{
+    const p=t.querySelector(".pumpkin");
+    if(!p||p.style.display==="none")return;
+
+    const tp=tilePos(+t.dataset.x,+t.dataset.y);
+    const tr={x:tp.x,y:tp.y,w:TILE,h:TILE};
+
+    if(overlap(pr,tr)){
+      p.style.display="none";
+      pumpkins++;
+      money+=pumpkinValue*moneyMult;
+      gainXP();
+      updateUI();
+
+      const key=t.dataset.x+","+t.dataset.y;
+      if(!timers[key]){
+        timers[key]=setTimeout(()=>{
+          p.style.display="block";
+          delete timers[key];
+        },regenTime);
+      }
+    }
+  });
+}
+
+function update(){
+  if(keys.w||keys.ArrowUp)pos.y-=speed;
+  if(keys.s||keys.ArrowDown)pos.y+=speed;
+  if(keys.a||keys.ArrowLeft)pos.x-=speed;
+  if(keys.d||keys.ArrowRight)pos.x+=speed;
+
+  const min=PAD,max=PAD+SIZE*(TILE+GAP)-TILE;
+  pos.x=Math.max(min,Math.min(pos.x,max));
+  pos.y=Math.max(min,Math.min(pos.y,max));
+
+  player.style.left=pos.x+"px";
+  player.style.top=pos.y+"px";
+  farm();
+  requestAnimationFrame(update);
+}
+
+document.addEventListener("keydown",e=>keys[e.key]=true);
+document.addEventListener("keyup",e=>keys[e.key]=false);
+
+// SHOP
+function buySpeed() { 
+  if (money >= 10 && speedLv < maxSpeed) {  
+    money -= 10; 
+    speedLv++; 
+    speed += 0.6; 
+    updateUI(); 
+  }
+}
+
+function buyValue(){ 
+  if(money>=15){ 
+    money-=15; 
+    valueLv++; 
+    pumpkinValue++; 
+    updateUI(); 
+  } 
+}
+
+function buyRegen(){ 
+  if(money>=20){ 
+    money-=20; 
+    regenLv++; 
+    regenTime=Math.max(500,regenTime-400); 
+    updateUI(); 
+  } 
+}
+
+// BUY MAX PER UPGRADE
+function buyMaxSpeed(){ 
+  while (money >= 10 && speedLv < maxSpeed) { buySpeed(); }
+}
+function buyMaxValue(){ while(money>=15){ buyValue(); } }
+function buyMaxRegen(){ while(money>=20){ buyRegen(); } }
+
+// PRESTIGE
+function calculatePrestigePoints() {
+  return Math.floor(money/1000000);
+}
+
+function updatePrestigeButton() {
+  const willGet = calculatePrestigePoints();
+  prestigeBtn.textContent = `Prestige (Will get ${willGet})`;
+  prestigeEl.textContent = prestigePoints;
+}
+
+function prestige() {
+  const points = calculatePrestigePoints();
+  if(points <= 0) return alert("Not enough money to prestige!");
+  prestigePoints += points;
+
+  // Reset game but keep prestige
+  money = 0;
+  pumpkins = 0;
+  level = 1;
+  xp = 0;
+  xpNeeded = 10;
+  moneyMult = 1;
+  speedLv = 1;
+  valueLv = 1;
+  regenLv = 1;
+  speed = 2.2;
+  pumpkinValue = 1;
+  regenTime = 3000;
+  updateUI();
+  updateLevelUI();
+  alert(`Prestige! You gained ${points} prestige point(s).`);
+}
+
+// SAVE / LOAD
+function saveGame(){
+  localStorage.setItem("pumpkinSave",JSON.stringify({
+    money,pumpkins,level,xp,xpNeeded,moneyMult,
+    speedLv,valueLv,regenLv,speed,pumpkinValue,regenTime,
+    prestigePoints
+  }));
+  alert("Game saved!");
+}
+
+function loadGame(){
+  const save=JSON.parse(localStorage.getItem("pumpkinSave"));
+  if(!save)return;
+  Object.assign(window,save);
+  updateUI();
+  updateLevelUI();
+}
+
+function resetGame(){
+  if(confirm("Reset everything?")){
+    localStorage.removeItem("pumpkinSave");
+    location.reload();
+  }
+}
+
+function updateUI(){
+  moneyEl.textContent=Math.floor(money);
+  countEl.textContent=pumpkins;
+  speedLvEl.textContent=speedLv;
+  valueLvEl.textContent=valueLv;
+  regenLvEl.textContent=regenLv;
+
+  // Show MAX if speedLv is at limit
+  if(speedLv >= maxSpeed){
+    speedBtn.textContent = "Speed MAX";
+  } else {
+    speedBtn.innerHTML = `Speed Lv <span id="speedLv">${speedLv}</span> ($10)`;
+  }
+
+  updatePrestigeButton();
+}
+
+// START
+loadGame();
+updateLevelUI();
+update();
+</script>
+</body>
+</html>
