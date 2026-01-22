@@ -2,69 +2,78 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Pumpkin Farmer (Prestige Preview)</title>
+<title>Pumpkin Farmer</title>
 
 <style>
-body {
+body{
   background:#2b1b0e;
   display:flex;
   justify-content:center;
   align-items:center;
   height:100vh;
   margin:0;
-  font-family:Arial, sans-serif;
+  font-family:Arial,sans-serif;
   color:white;
 }
-#container { display:flex; gap:20px; }
-#game {
+#container{display:flex;gap:20px}
+#game{
   position:relative;
   width:520px;
   height:520px;
   background:#4a2d12;
   padding:6px;
   display:grid;
-  grid-template-columns:repeat(10, 48px);
-  grid-template-rows:repeat(10, 48px);
+  grid-template-columns:repeat(10,48px);
+  grid-template-rows:repeat(10,48px);
   gap:4px;
 }
-.tile { background:#6b3e1e; }
-.pumpkin {
+.tile{background:#6b3e1e}
+.pumpkin{
   width:100%;
   height:100%;
   background:orange;
   border-radius:8px;
 }
-#player {
+#player{
   position:absolute;
   width:36px;
   height:36px;
   background:#4aa3ff;
   border-radius:6px;
 }
-#ui { width:300px; }
-button {
+#ui{width:300px}
+button{
   padding:6px;
   margin-top:6px;
   background:#8a4b1d;
   color:white;
   border:none;
   cursor:pointer;
+  width:100%;
 }
-button:hover { background:#a85c24; }
-.bar {
+button:hover{background:#a85c24}
+.bar{
   width:100%;
   height:14px;
   background:#3a240f;
   border-radius:6px;
   overflow:hidden;
 }
-.fill { height:100%; background:#4aa3ff; width:0%; }
+.fill{height:100%;background:#4aa3ff;width:0%}
+#prestigeShop{
+  display:none;
+  background:#3a240f;
+  padding:6px;
+  border-radius:6px;
+  margin-top:6px;
+}
 </style>
 </head>
-<body>
 
+<body>
 <div id="container">
   <div id="game"></div>
+
   <div id="ui">
     <h2>🎃 Pumpkin Farmer</h2>
     <p>Money: $<span id="money">0</span></p>
@@ -76,7 +85,13 @@ button:hover { background:#a85c24; }
 
     <h3>🏆 Prestige</h3>
     <p>Points: <span id="prestigePoints">0</span></p>
-    <button id="prestigeBtn">Prestige (0)</button>
+    <button id="prestigeBtn"></button>
+
+    <button onclick="togglePrestigeShop()">🧬 Prestige Shop</button>
+    <div id="prestigeShop">
+      <button id="pSpeedBtn" onclick="buyPrestigeSpeed()"></button>
+      <button id="pAreaBtn" onclick="buyPrestigeArea()"></button>
+    </div>
 
     <h3>🛒 Upgrades</h3>
     <button id="speedBtn" onclick="buyMaxSpeed()"></button>
@@ -85,14 +100,14 @@ button:hover { background:#a85c24; }
 
     <h3>💾 Save</h3>
     <button onclick="saveGame()">Save</button>
-    <button onclick="resetGame()" style="background:#a84444;">Reset</button>
+    <button onclick="resetGame()" style="background:#a84444">Reset</button>
   </div>
 </div>
 
 <script>
-/* ===== FAST NUMBER FORMAT ===== */
+/* ===== FORMAT ===== */
 function format(n){
-  if(n < 1000) return Math.floor(n);
+  if(n<1000) return Math.floor(n);
   const u=["K","M","B","T","Qa","Qi","Sx","Sp","Oc","No"];
   const e=Math.floor(Math.log10(n)/3);
   return (n/Math.pow(1000,e)).toFixed(2)+(u[e-1]||"e"+e*3);
@@ -105,9 +120,25 @@ const game=document.getElementById("game");
 /* ===== STATE ===== */
 let money=0,pumpkins=0,level=1,xp=0,xpNeed=10,mult=1;
 let prestigePoints=0;
-let speed=2.2,speedLv=1,maxSpeed=25;
+
+const speedBase=2.2;
+let speedLv=1,maxSpeed=25;
 let value=1,valueLv=1,regen=3000,regenLv=1;
+
+let pSpeedLv=0,pAreaLv=0;
+const pMax=10;
+let pSpeedCost=100000,pAreaCost=100000;
+
+let speed=0;
 let keys={},tiles=[],uiDirty=true;
+
+/* ===== CALCS ===== */
+function recalcSpeed(){
+  speed=(speedBase+(speedLv-1)*0.6)*(1+pSpeedLv*0.15);
+}
+function farmRadius(){
+  return 18 + pAreaLv * 12;
+}
 
 /* ===== DOM ===== */
 const moneyEl=document.getElementById("money");
@@ -121,6 +152,8 @@ const prestigeBtn=document.getElementById("prestigeBtn");
 const speedBtn=document.getElementById("speedBtn");
 const valueBtn=document.getElementById("valueBtn");
 const regenBtn=document.getElementById("regenBtn");
+const pSpeedBtn=document.getElementById("pSpeedBtn");
+const pAreaBtn=document.getElementById("pAreaBtn");
 
 /* ===== FARM SETUP ===== */
 for(let y=0;y<SIZE;y++){
@@ -146,22 +179,24 @@ addEventListener("keydown",e=>keys[e.key]=true);
 addEventListener("keyup",e=>keys[e.key]=false);
 
 /* ===== GAME LOOP ===== */
-function overlap(a,b){
-  return !(a.x+a.w<b.x||a.x>b.x+b.w||a.y+a.h<b.y||a.y>b.y+b.h);
+function overlapCircle(px,py,tx,ty,r){
+  const cx=tx+TILE/2,cy=ty+TILE/2;
+  return Math.hypot(px-cx,py-cy)<=r;
 }
 
 function farm(){
-  const pr={x:pos.x,y:pos.y,w:36,h:36};
+  const r=farmRadius();
+  const px=pos.x+18,py=pos.y+18;
   for(const t of tiles){
     const p=t.firstChild;
     if(p.style.display==="none") continue;
-    if(overlap(pr,{...t._pos,w:TILE,h:TILE})){
+    if(overlapCircle(px,py,t._pos.x,t._pos.y,r)){
       p.style.display="none";
       pumpkins++;
       money+=value*mult;
       xp++;
       if(xp>=xpNeed){
-        xp=0; level++;
+        xp=0;level++;
         xpNeed=Math.floor(xpNeed*1.4);
         mult*=1.1;
       }
@@ -173,10 +208,10 @@ function farm(){
 
 function update(){
   let moved=false;
-  if(keys.w||keys.ArrowUp){pos.y-=speed;moved=true;}
-  if(keys.s||keys.ArrowDown){pos.y+=speed;moved=true;}
-  if(keys.a||keys.ArrowLeft){pos.x-=speed;moved=true;}
-  if(keys.d||keys.ArrowRight){pos.x+=speed;moved=true;}
+  if(keys.w||keys.ArrowUp){pos.y-=speed;moved=true}
+  if(keys.s||keys.ArrowDown){pos.y+=speed;moved=true}
+  if(keys.a||keys.ArrowLeft){pos.x-=speed;moved=true}
+  if(keys.d||keys.ArrowRight){pos.x+=speed;moved=true}
   if(moved){
     player.style.left=pos.x+"px";
     player.style.top=pos.y+"px";
@@ -185,8 +220,8 @@ function update(){
   requestAnimationFrame(update);
 }
 
-/* ===== UI LOOP ===== */
-function prestigeGain(){ return Math.floor(money/1e6); }
+/* ===== UI ===== */
+function prestigeGain(){return Math.floor(money/1e6)}
 
 function updateUI(){
   moneyEl.textContent=format(money);
@@ -196,17 +231,23 @@ function updateUI(){
   xpFill.style.width=(xp/xpNeed*100)+"%";
   prestigeEl.textContent=format(prestigePoints);
 
-  // Show upgrades with current level
   speedBtn.textContent=speedLv>=maxSpeed?"Speed MAX":`Speed Lv ${speedLv} ($10)`;
   valueBtn.textContent=`Value Lv ${valueLv} ($15)`;
   regenBtn.textContent=`Regen Lv ${regenLv} ($20)`;
 
-  // Show potential prestige points
-  prestigeBtn.textContent=`Prestige (Will get ${format(prestigeGain())})`;
+  pSpeedBtn.textContent=pSpeedLv>=pMax
+    ?"Prestige Speed MAX"
+    :`Prestige Speed Lv ${pSpeedLv} (${format(pSpeedCost)} PP)`;
+
+  pAreaBtn.textContent=pAreaLv>=pMax
+    ?"Farming Area MAX"
+    :`Farming Area Lv ${pAreaLv} (${format(pAreaCost)} PP)`;
+
+  prestigeBtn.textContent=`Prestige (Gain ${format(prestigeGain())})`;
 }
 
 function uiLoop(){
-  if(uiDirty){updateUI();uiDirty=false;}
+  if(uiDirty){updateUI();uiDirty=false}
   requestAnimationFrame(uiLoop);
 }
 
@@ -217,7 +258,7 @@ function buyMaxSpeed(){
   if(can<=0) return;
   money-=can*cost;
   speedLv+=can;
-  speed+=can*0.6;
+  recalcSpeed();
   uiDirty=true;
 }
 function buyMaxValue(){
@@ -246,15 +287,38 @@ prestigeBtn.onclick=()=>{
   prestigePoints+=g;
   money=pumpkins=0;
   level=1;xp=0;xpNeed=10;mult=1;
-  speed=2.2;speedLv=1;value=1;valueLv=1;regen=3000;regenLv=1;
+  speedLv=1;value=1;valueLv=1;regen=3000;regenLv=1;
+  recalcSpeed();
   uiDirty=true;
 };
+
+/* ===== PRESTIGE SHOP ===== */
+function togglePrestigeShop(){
+  const s=document.getElementById("prestigeShop");
+  s.style.display=s.style.display==="none"?"block":"none";
+}
+function buyPrestigeSpeed(){
+  if(pSpeedLv>=pMax||prestigePoints<pSpeedCost) return;
+  prestigePoints-=pSpeedCost;
+  pSpeedLv++;
+  pSpeedCost=Math.floor(pSpeedCost*2.1);
+  recalcSpeed();
+  uiDirty=true;
+}
+function buyPrestigeArea(){
+  if(pAreaLv>=pMax||prestigePoints<pAreaCost) return;
+  prestigePoints-=pAreaCost;
+  pAreaLv++;
+  pAreaCost=Math.floor(pAreaCost*2.1);
+  uiDirty=true;
+}
 
 /* ===== SAVE ===== */
 function saveGame(){
   localStorage.setItem("pumpkinSave",JSON.stringify({
     money,pumpkins,level,xp,xpNeed,mult,prestigePoints,
-    speed,speedLv,value,valueLv,regen,regenLv
+    speedLv,value,valueLv,regen,regenLv,
+    pSpeedLv,pSpeedCost,pAreaLv,pAreaCost
   }));
 }
 function resetGame(){
@@ -264,11 +328,14 @@ function resetGame(){
 (function load(){
   const s=JSON.parse(localStorage.getItem("pumpkinSave"));
   if(s) Object.assign(window,s);
+  recalcSpeed();
   uiDirty=true;
 })();
 
+recalcSpeed();
 update();
 uiLoop();
 </script>
 </body>
 </html>
+
