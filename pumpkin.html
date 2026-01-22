@@ -115,6 +115,9 @@ function format(n){
 
 /* ===== CONSTANTS ===== */
 const SIZE=10,TILE=48,GAP=4,PAD=6;
+const PLAYER=36;
+const GAME_SIZE=PAD*2 + SIZE*TILE + (SIZE-1)*GAP;
+
 const game=document.getElementById("game");
 
 /* ===== STATE ===== */
@@ -137,7 +140,7 @@ function recalcSpeed(){
   speed=(speedBase+(speedLv-1)*0.6)*(1+pSpeedLv*0.15);
 }
 function farmRadius(){
-  return 18 + pAreaLv * 12;
+  return 18 + pAreaLv*12;
 }
 
 /* ===== DOM ===== */
@@ -178,7 +181,7 @@ let pos={x:PAD+6,y:PAD+6};
 addEventListener("keydown",e=>keys[e.key]=true);
 addEventListener("keyup",e=>keys[e.key]=false);
 
-/* ===== GAME LOOP ===== */
+/* ===== FARMING ===== */
 function overlapCircle(px,py,tx,ty,r){
   const cx=tx+TILE/2,cy=ty+TILE/2;
   return Math.hypot(px-cx,py-cy)<=r;
@@ -186,7 +189,7 @@ function overlapCircle(px,py,tx,ty,r){
 
 function farm(){
   const r=farmRadius();
-  const px=pos.x+18,py=pos.y+18;
+  const px=pos.x+PLAYER/2,py=pos.y+PLAYER/2;
   for(const t of tiles){
     const p=t.firstChild;
     if(p.style.display==="none") continue;
@@ -206,12 +209,18 @@ function farm(){
   }
 }
 
+/* ===== GAME LOOP ===== */
 function update(){
   let moved=false;
   if(keys.w||keys.ArrowUp){pos.y-=speed;moved=true}
   if(keys.s||keys.ArrowDown){pos.y+=speed;moved=true}
   if(keys.a||keys.ArrowLeft){pos.x-=speed;moved=true}
   if(keys.d||keys.ArrowRight){pos.x+=speed;moved=true}
+
+  /* 🔒 CLAMP TO FARM BORDERS */
+  pos.x=Math.max(PAD,Math.min(GAME_SIZE-PAD-PLAYER,pos.x));
+  pos.y=Math.max(PAD,Math.min(GAME_SIZE-PAD-PLAYER,pos.y));
+
   if(moved){
     player.style.left=pos.x+"px";
     player.style.top=pos.y+"px";
@@ -338,4 +347,5 @@ uiLoop();
 </script>
 </body>
 </html>
+
 
