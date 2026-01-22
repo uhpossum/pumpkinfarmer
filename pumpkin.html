@@ -91,6 +91,7 @@ button:hover{background:#a85c24}
     <div id="prestigeShop">
       <button id="pSpeedBtn" onclick="buyPrestigeSpeed()"></button>
       <button id="pAreaBtn" onclick="buyPrestigeArea()"></button>
+      <button id="pRegenBtn" onclick="buyPrestigeRegen()"></button>
     </div>
 
     <h3>🛒 Upgrades</h3>
@@ -132,6 +133,9 @@ let pSpeedLv=0,pAreaLv=0;
 const pMax=10;
 let pSpeedCost=100000,pAreaCost=100000;
 
+let pRegenBought=false;
+const pRegenCost=1e27; // 1 octillion
+
 let speed=0;
 let keys={},tiles=[],uiDirty=true;
 
@@ -157,6 +161,7 @@ const valueBtn=document.getElementById("valueBtn");
 const regenBtn=document.getElementById("regenBtn");
 const pSpeedBtn=document.getElementById("pSpeedBtn");
 const pAreaBtn=document.getElementById("pAreaBtn");
+const pRegenBtn=document.getElementById("pRegenBtn");
 
 /* ===== FARM SETUP ===== */
 for(let y=0;y<SIZE;y++){
@@ -250,7 +255,12 @@ function updateUI(){
 
   pAreaBtn.textContent=pAreaLv>=pMax
     ?"Farming Area MAX"
-    :`Farming Area Lv ${pAreaLv} (${format(pAreaCost)} PP)`;
+    :`Farming Area Lv ${pAreaCost} (${format(pAreaCost)} PP)`;
+
+  pRegenBtn.textContent = pRegenBought
+    ? "⚡ Prestige Regen Speed (BOUGHT)"
+    : `⚡ Prestige Regen Speed (${format(pRegenCost)} PP)`;
+  pRegenBtn.disabled = pRegenBought;
 
   prestigeBtn.textContent=`Prestige (Gain ${format(prestigeGain())})`;
 }
@@ -296,7 +306,9 @@ prestigeBtn.onclick=()=>{
   prestigePoints+=g;
   money=pumpkins=0;
   level=1;xp=0;xpNeed=10;mult=1;
-  speedLv=1;value=1;valueLv=1;regen=3000;regenLv=1;
+  speedLv=1;value=1;valueLv=1;
+  regen = pRegenBought ? 50 : 3000;
+  regenLv=1;
   recalcSpeed();
   uiDirty=true;
 };
@@ -321,13 +333,23 @@ function buyPrestigeArea(){
   pAreaCost=Math.floor(pAreaCost*2.1);
   uiDirty=true;
 }
+function buyPrestigeRegen(){
+  if(pRegenBought) return;
+  if(prestigePoints < pRegenCost) return;
+
+  prestigePoints -= pRegenCost;
+  pRegenBought = true;
+  regen = 50;
+  uiDirty = true;
+}
 
 /* ===== SAVE ===== */
 function saveGame(){
   localStorage.setItem("pumpkinSave",JSON.stringify({
     money,pumpkins,level,xp,xpNeed,mult,prestigePoints,
     speedLv,value,valueLv,regen,regenLv,
-    pSpeedLv,pSpeedCost,pAreaLv,pAreaCost
+    pSpeedLv,pSpeedCost,pAreaLv,pAreaCost,
+    pRegenBought
   }));
 }
 function resetGame(){
@@ -337,6 +359,7 @@ function resetGame(){
 (function load(){
   const s=JSON.parse(localStorage.getItem("pumpkinSave"));
   if(s) Object.assign(window,s);
+  if(pRegenBought) regen = 50;
   recalcSpeed();
   uiDirty=true;
 })();
@@ -347,5 +370,6 @@ uiLoop();
 </script>
 </body>
 </html>
+
 
 
