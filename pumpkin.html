@@ -9,7 +9,7 @@ body{
   background:#2b1b0e;
   display:flex;
   justify-content:center;
-  align-items:center;
+  align-items:flex-start;
   height:100vh;
   margin:0;
   font-family:Arial,sans-serif;
@@ -41,7 +41,12 @@ body{
   background:#4aa3ff;
   border-radius:6px;
 }
-#ui{width:300px}
+#ui{
+  width:300px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding-right:6px;
+}
 button{
   padding:6px;
   margin-top:6px;
@@ -92,6 +97,8 @@ button:hover{background:#a85c24}
       <button id="pSpeedBtn" onclick="buyPrestigeSpeed()"></button>
       <button id="pAreaBtn" onclick="buyPrestigeArea()"></button>
       <button id="pRegenBtn" onclick="buyPrestigeRegen()"></button>
+      <button id="pExtraAreaBtn" onclick="buyPrestigeExtraArea()"></button>
+      <button id="pPlotBtn" onclick="buyPrestigePlot()"></button>
     </div>
 
     <h3>🛒 Upgrades</h3>
@@ -136,6 +143,9 @@ let pSpeedCost=100000,pAreaCost=100000;
 let pRegenBought=false;
 const pRegenCost=1e27; // 1 octillion
 
+let pExtraAreaLv=0, pExtraAreaMax=5, pExtraAreaCost=5e27;
+let pPlotLv=0, pPlotMax=5, pPlotCost=1e29; // 100 nonillion
+
 let speed=0;
 let keys={},tiles=[],uiDirty=true;
 
@@ -144,7 +154,13 @@ function recalcSpeed(){
   speed=(speedBase+(speedLv-1)*0.6)*(1+pSpeedLv*0.15);
 }
 function farmRadius(){
-  return 18 + pAreaLv*12;
+  const base=18;
+  const normal=pAreaLv*12;
+  const extra=pExtraAreaLv*18; // scaled better
+  return base + normal + extra;
+}
+function plotMultiplier(){
+  return 1 + pPlotLv; // each level adds 1x more plots per tile
 }
 
 /* ===== DOM ===== */
@@ -159,9 +175,12 @@ const prestigeBtn=document.getElementById("prestigeBtn");
 const speedBtn=document.getElementById("speedBtn");
 const valueBtn=document.getElementById("valueBtn");
 const regenBtn=document.getElementById("regenBtn");
+
 const pSpeedBtn=document.getElementById("pSpeedBtn");
 const pAreaBtn=document.getElementById("pAreaBtn");
 const pRegenBtn=document.getElementById("pRegenBtn");
+const pExtraAreaBtn=document.getElementById("pExtraAreaBtn");
+const pPlotBtn=document.getElementById("pPlotBtn");
 
 /* ===== FARM SETUP ===== */
 for(let y=0;y<SIZE;y++){
@@ -199,17 +218,19 @@ function farm(){
     const p=t.firstChild;
     if(p.style.display==="none") continue;
     if(overlapCircle(px,py,t._pos.x,t._pos.y,r)){
-      p.style.display="none";
-      pumpkins++;
-      money+=value*mult;
-      xp++;
-      if(xp>=xpNeed){
-        xp=0;level++;
-        xpNeed=Math.floor(xpNeed*1.4);
-        mult*=1.1;
+      for(let i=0;i<plotMultiplier();i++){
+        p.style.display="none";
+        pumpkins++;
+        money+=value*mult;
+        xp++;
+        if(xp>=xpNeed){
+          xp=0;level++;
+          xpNeed=Math.floor(xpNeed*1.4);
+          mult*=1.1;
+        }
+        uiDirty=true;
+        setTimeout(()=>p.style.display="block",regen);
       }
-      uiDirty=true;
-      setTimeout(()=>p.style.display="block",regen);
     }
   }
 }
@@ -222,7 +243,6 @@ function update(){
   if(keys.a||keys.ArrowLeft){pos.x-=speed;moved=true}
   if(keys.d||keys.ArrowRight){pos.x+=speed;moved=true}
 
-  /* 🔒 CLAMP TO FARM BORDERS */
   pos.x=Math.max(PAD,Math.min(GAME_SIZE-PAD-PLAYER,pos.x));
   pos.y=Math.max(PAD,Math.min(GAME_SIZE-PAD-PLAYER,pos.y));
 
@@ -262,7 +282,13 @@ function updateUI(){
     : `⚡ Prestige Regen Speed (${format(pRegenCost)} PP)`;
   pRegenBtn.disabled = pRegenBought;
 
-  prestigeBtn.textContent=`Prestige (Gain ${format(prestigeGain())})`;
+  pExtraAreaBtn.textContent = pExtraAreaLv>=pExtraAreaMax
+    ?"More Farming Area MAX"
+    :`More Farming Area (${format(pExtraAreaCost)} PP)`;
+
+  pPlotBtn.textContent = pPlotLv>=pPlotMax
+    ?"Farming Plot Size MAX"
+    :`Farming Plot Size Lv ${pPlotLv} (${format(pPlotCost)} PP)`;
 }
 
 function uiLoop(){
@@ -336,11 +362,24 @@ function buyPrestigeArea(){
 function buyPrestigeRegen(){
   if(pRegenBought) return;
   if(prestigePoints < pRegenCost) return;
-
   prestigePoints -= pRegenCost;
   pRegenBought = true;
   regen = 50;
-  uiDirty = true;
+  uiDirty=true;
+}
+function buyPrestigeExtraArea(){
+  if(pExtraAreaLv>=pExtraAreaMax || prestigePoints<pExtraAreaCost) return;
+  prestigePoints -= pExtraAreaCost;
+  pExtraAreaLv++;
+  pExtraAreaCost=Math.floor(pExtraAreaCost*2.1);
+  uiDirty=true;
+}
+function buyPrestigePlot(){
+  if(pPlotLv>=pPlotMax || prestigePoints<pPlotCost) return;
+  prestigePoints -= pPlotCost;
+  pPlotLv++;
+  pPlotCost=Math.floor(pPlotCost*2.1);
+  uiDirty=true;
 }
 
 /* ===== SAVE ===== */
@@ -349,7 +388,8 @@ function saveGame(){
     money,pumpkins,level,xp,xpNeed,mult,prestigePoints,
     speedLv,value,valueLv,regen,regenLv,
     pSpeedLv,pSpeedCost,pAreaLv,pAreaCost,
-    pRegenBought
+    pRegenBought,pExtraAreaLv,pExtraAreaCost,
+    pPlotLv,pPlotCost
   }));
 }
 function resetGame(){
@@ -370,6 +410,7 @@ uiLoop();
 </script>
 </body>
 </html>
+
 
 
 
